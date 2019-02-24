@@ -1,10 +1,7 @@
 package com.example
 
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Props}
-import com.example.Banner.TryRegister
-import com.example.Course.{Available, registerStudent}
 import com.example.CourseInfo.{CheckCredit, CreditHour}
-
 import scala.collection.mutable.ListBuffer
 
 
@@ -16,9 +13,8 @@ TODO: Initialize Global variable Map to store courseInfo (courseName: String -->
 
 object Student {
   def props(studentName: String, bannerActor: ActorRef, courseInfoActor: ActorRef): Props = Props(new Student(studentName, bannerActor, courseInfoActor))
-  final case class CourseName(courseName: String)
   final case class ConfirmRegister(courseName: String, registered: Boolean)
-  case object Register
+  final case class Register(courseName: String)
 }
 
 class Student(courseName: String, bannerActor: ActorRef, courseInfoActor: ActorRef) extends Actor with ActorLogging {
@@ -30,10 +26,10 @@ class Student(courseName: String, bannerActor: ActorRef, courseInfoActor: ActorR
   var creditHourCount = 0
   
   def receive = {
-    case CourseName(courseName) =>
+    case Register(courseName)  =>
       registerCourseName = courseName
-    case Register =>
       courseInfoActor ! CheckCredit(registerCourseName)
+
     case CreditHour(creditHour) =>
       registerCourseCredit = creditHour
       if ((creditHour + creditHourCount) > 18){
@@ -41,6 +37,7 @@ class Student(courseName: String, bannerActor: ActorRef, courseInfoActor: ActorR
       } else {
         bannerActor ! TryRegister(registerCourseName, registerCourseCredit)
       }
+
     case ConfirmRegister(courseName, registered) =>
       if(registered){
         log.info("Student registered in " + courseName + ": " + registered)
@@ -52,7 +49,6 @@ class Student(courseName: String, bannerActor: ActorRef, courseInfoActor: ActorR
         //Registration was unsuccessful, do nothing
         log.info("Student registered in " + courseName + ": " + registered)
       }
-
   }
 }
 
@@ -64,13 +60,13 @@ object Course {
 
 class Course(courseName: String, capacity: Int, bannerActor: ActorRef) extends Actor with ActorLogging {
   import Student._
-  import Banner._
   import Course._
 
   var remainSeat = capacity
   def receive = {
     case registerStudent(courseName: String, student: ActorRef) =>
       if (remainSeat > 0) {
+        remainSeat  -= 1
         student ! ConfirmRegister(courseName, true)
       } else {
         student ! ConfirmRegister(courseName, false)
@@ -100,9 +96,8 @@ object CourseInfo {
   final case class CheckCredit(courseName: String)
 }
 class CourseInfo extends Actor with ActorLogging {
-  import Banner._
 
-  val info = scala.collection.mutable.Map("CS498" -> 3, "CS241" -> 4, "CS421" -> 3)
+  val info = scala.collection.mutable.Map("CS498" -> 3, "CS241" -> 4, "CS421" -> 3, "CS374" -> 19)
   def receive = {
     case CheckCredit(courseName) =>
       sender() ! CreditHour(info(courseName))
@@ -126,12 +121,10 @@ object CourseRegister extends App {
   val CS498: ActorRef = system.actorOf(Course.props("CS498", 5, banner), "CS498")
   val CS241: ActorRef = system.actorOf(Course.props("CS241", 10, banner), "CS241")
   val CS421: ActorRef = system.actorOf(Course.props("CS421", 8, banner), "CS421")
+  val CS374: ActorRef = system.actorOf(Course.props("CS374", 8, banner), "CS374")
 
-  studentA ! CourseName("CS498")
-  studentA ! Register
-  studentB ! CourseName("CS241")
-  studentB ! Register
-  studentC ! CourseName("CS421")
-  studentC ! Register
+  studentA ! Register("CS374")
+  studentB ! Register("CS241")
+  studentC ! Register("CS421")
 
 }
