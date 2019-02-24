@@ -1,7 +1,9 @@
 package com.example
 
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Props}
+import com.example.Administrator.{addCourse, removeCourse}
 import com.example.CourseInfo.{CheckCredit, CreditHour}
+
 import scala.collection.mutable.ListBuffer
 
 
@@ -97,13 +99,41 @@ object CourseInfo {
 }
 class CourseInfo extends Actor with ActorLogging {
 
-  val info = scala.collection.mutable.Map("CS498" -> 3, "CS241" -> 4, "CS421" -> 3, "CS374" -> 19)
+  val info = scala.collection.mutable.Map("CS498" -> 3, "CS241" -> 4, "CS374" -> 19)
   def receive = {
     case CheckCredit(courseName) =>
-      sender() ! CreditHour(info(courseName))
+      if (info.contains(courseName)){
+        sender() ! CreditHour(info(courseName))
+      }else{
+        log.error("Course" + courseName + "doesn't exist")
+      }
+    case addCourse(courseName, creditHour) =>
+      info += (courseName -> creditHour)
+      log.info("Successfully added course" + courseName + "(" + creditHour + " hrs)")
+    case removeCourse(courseName) =>
+      if (info.contains(courseName)){
+        info -= (courseName)
+        log.info("Successfully removed course" + courseName)
+      } else {
+        log.error("Course" + courseName + "doesn't exist")
+      }
   }
 }
 
+object Administrator {
+  def props(courseInfoActor : ActorRef): Props = Props(new Administrator(courseInfoActor))
+  final case class addCourse(courseName: String, creditHour: Int)
+  final case class removeCourse(courseName: String)
+}
+
+class Administrator(courseInfoActor: ActorRef) extends Actor with ActorLogging {
+  def receive = {
+    case addCourse(courseName, creditHour) =>
+      courseInfoActor ! addCourse(courseName, creditHour)
+    case removeCourse(courseName) =>
+      courseInfoActor ! removeCourse(courseName)
+  }
+}
 
 //#main-class
 object CourseRegister extends App {
@@ -111,8 +141,8 @@ object CourseRegister extends App {
   val system: ActorSystem = ActorSystem("banner")
 
   val banner: ActorRef = system.actorOf(Banner.props, "bannerActor")
-
   val courseInfo: ActorRef = system.actorOf(CourseInfo.props, "courseInfoActor")
+  val administrator: ActorRef = system.actorOf(Administrator.props(courseInfo), "administrator")
 
   val studentA: ActorRef = system.actorOf(Student.props("StudentA", banner, courseInfo), "StudentA")
   val studentB: ActorRef = system.actorOf(Student.props("StudentB", banner, courseInfo), "StudentB")
@@ -123,6 +153,7 @@ object CourseRegister extends App {
   val CS421: ActorRef = system.actorOf(Course.props("CS421", 8, banner), "CS421")
   val CS374: ActorRef = system.actorOf(Course.props("CS374", 8, banner), "CS374")
 
+  administrator ! addCourse("CS421", 3)
   studentA ! Register("CS374")
   studentB ! Register("CS241")
   studentC ! Register("CS421")
