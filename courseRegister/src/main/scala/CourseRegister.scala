@@ -15,8 +15,9 @@ TODO: Initialize Global variable Map to store courseInfo (courseName: String -->
 
 object Student {
   def props(studentName: String, bannerActor: ActorRef, courseInfoActor: ActorRef): Props = Props(new Student(studentName, bannerActor, courseInfoActor))
-  final case class ConfirmRegister(courseName: String, registered: Boolean)
+  final case class ConfirmRegister(courseName: String, registered: Boolean, courseCredit: Int)
   final case class Register(courseName: String)
+  final case class PrintRegisteredCourses()
 }
 
 class Student(courseName: String, bannerActor: ActorRef, courseInfoActor: ActorRef) extends Actor with ActorLogging {
@@ -32,32 +33,39 @@ class Student(courseName: String, bannerActor: ActorRef, courseInfoActor: ActorR
       registerCourseName = courseName
       courseInfoActor ! CheckCredit(registerCourseName)
 
-    case CreditHour(creditHour) =>
+    case CreditHour(courseName, creditHour) =>
       registerCourseCredit = creditHour
       if ((creditHour + creditHourCount) > 18){
-        log.info("Cannot register due to overload.")
+        log.info("Student cannot register in: " + courseName + " due to overload.")
       } else {
-        bannerActor ! TryRegister(registerCourseName, registerCourseCredit)
+        bannerActor ! TryRegister(courseName, creditHour)
+        creditHourCount += creditHour
       }
 
-    case ConfirmRegister(courseName, registered) =>
+    case ConfirmRegister(courseName, registered, courseCredit) =>
       if(registered){
-        log.info("Student registered in " + courseName + ": " + registered)
+        log.info("Student SUCCESSFULLY registered in " + courseName)
         registeredCourses += courseName
         //increment creditHourCount with Course Credit Hour from dictionary
-        registerCourseCredit +=registerCourseCredit
+//        creditHourCount += courseCredit
       }
       else{
         //Registration was unsuccessful, do nothing
-        log.info("Student registered in " + courseName + ": " + registered)
+        log.info("Student FAILED to register in: " + courseName)
+        creditHourCount -= courseCredit
       }
+    case PrintRegisteredCourses() =>
+      var retVal: String = ""
+      registeredCourses.foreach(retVal += _ + "\n")
+      retVal += "Total Course Credit Registered for: " + creditHourCount.toString + "\n"
+      log.info(retVal)
   }
 }
 
 object Course {
   def props(courseName: String, capacity: Int, bannerActor: ActorRef): Props = Props(new Course(courseName, capacity, bannerActor))
   final case class Available(courseCanRegister: Boolean)
-  final case class registerStudent(courseName: String, student: ActorRef)
+  final case class registerStudent(courseName: String, student: ActorRef, courseCredit: Int)
 }
 
 class Course(courseName: String, capacity: Int, bannerActor: ActorRef) extends Actor with ActorLogging {
@@ -66,12 +74,12 @@ class Course(courseName: String, capacity: Int, bannerActor: ActorRef) extends A
 
   var remainSeat = capacity
   def receive = {
-    case registerStudent(courseName: String, student: ActorRef) =>
+    case registerStudent(courseName: String, student: ActorRef, courseCredit: Int) =>
       if (remainSeat > 0) {
         remainSeat  -= 1
-        student ! ConfirmRegister(courseName, true)
+        student ! ConfirmRegister(courseName, true, courseCredit)
       } else {
-        student ! ConfirmRegister(courseName, false)
+        student ! ConfirmRegister(courseName, false, courseCredit)
       }
   }
 
@@ -88,22 +96,22 @@ class Course(courseName: String, capacity: Int, bannerActor: ActorRef) extends A
     def receive = {
       case TryRegister(courseName, courseCredit) =>
         log.info("Banner has received register message from " + sender() + " to register in " + courseName + "(" + courseCredit + " hrs)")
-        context.actorSelection("akka://banner/user/" + courseName) ! registerStudent(courseName, sender())
+        context.actorSelection("akka://banner/user/" + courseName) ! registerStudent(courseName, sender(), courseCredit)
     }
   }
 
 object CourseInfo {
   def props: Props = Props[CourseInfo]
-  final case class CreditHour(creditHour: Int)
+  final case class CreditHour(courseName: String, creditHour: Int)
   final case class CheckCredit(courseName: String)
 }
 class CourseInfo extends Actor with ActorLogging {
 
-  val info = scala.collection.mutable.Map("CS498" -> 3, "CS241" -> 4, "CS374" -> 19)
+  val info = scala.collection.mutable.Map("CS498" -> 3, "CS241" -> 4, "CS374" -> 4)
   def receive = {
     case CheckCredit(courseName) =>
       if (info.contains(courseName)){
-        sender() ! CreditHour(info(courseName))
+        sender() ! CreditHour(courseName, info(courseName))
       }else{
         log.error("Course" + courseName + "doesn't exist")
       }
@@ -152,10 +160,42 @@ object CourseRegister extends App {
   val CS241: ActorRef = system.actorOf(Course.props("CS241", 10, banner), "CS241")
   val CS421: ActorRef = system.actorOf(Course.props("CS421", 8, banner), "CS421")
   val CS374: ActorRef = system.actorOf(Course.props("CS374", 8, banner), "CS374")
+  val ECE408: ActorRef = system.actorOf(Course.props("ECE408", 13, banner), "ECE408")
+  val ECE411: ActorRef = system.actorOf(Course.props("ECE411", 2, banner), "ECE411")
+  val ECE391: ActorRef = system.actorOf(Course.props("ECE391", 3, banner), "ECE391")
 
   administrator ! addCourse("CS421", 3)
+  administrator ! addCourse("ECE408", 4)
+  administrator ! addCourse("ECE411", 4)
+  administrator ! addCourse("ECE391", 4)
+
   studentA ! Register("CS374")
+  studentA ! Register("ECE408")
+  studentA ! Register("CS241")
+  studentA ! Register("CS421")
+  studentA ! Register("ECE411")
+  studentA ! Register("ECE391")
+
   studentB ! Register("CS241")
   studentC ! Register("CS421")
+
+  for( i <- 1 to 999999999){
+    //Busy Wait for all register messages to be processed
+  }
+
+  studentA ! PrintRegisteredCourses()
+
+  for( i <- 1 to 999999999){
+    //Busy Wait for all register messages to be processed
+  }
+  studentB ! PrintRegisteredCourses()
+
+  for( i <- 1 to 999999999){
+    //Busy Wait for all register messages to be processed
+  }
+  studentC ! PrintRegisteredCourses()
+
+
+
 
 }
